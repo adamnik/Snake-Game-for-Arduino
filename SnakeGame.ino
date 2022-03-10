@@ -4,13 +4,19 @@ int right = 1;
 int left = -1;
 int up = 2;
 int down = -2;
-int joyStick_x = A5;
-int joyStick_y = A6;
+int joyStick_x = A6;
+int joyStick_y = A5;
 int serialData = 8;
 int shiftClock = 9;
 int latchClock = 10;
 const int row = 8 ;
 const int col = 8;
+class Node;
+class Snake;
+class Apple;
+class Board;
+void play_game(Snake *snake, Apple *apple, Board *board);
+void end_game(Snake *snake, Apple *apple, Board *board);
 
 void setup() {
   pinMode(serialData, OUTPUT);
@@ -52,8 +58,11 @@ class Snake {
     Node *head;
     Node *tail;
     int direct;
+    int score;
+    
     Snake(){
       this->direct = 0;
+      this->score = 0;
       Node *newHead = new Node(0,3);
       newHead->next = NULL;
       newHead->prev = NULL;
@@ -74,11 +83,11 @@ class Snake {
       } else {
         return;
       }
-
       newHead->prev = NULL;
       newHead->next = this->head;
       this->head->prev = newHead;
       this->head = newHead;
+      this->score++;
     }
 
     void delete_tail(){
@@ -97,7 +106,6 @@ class Snake {
           this->head->y < 0) {
             return true;
       }
-
       //check for hitting self
       Node *cur = this->head->next;
       while (cur != NULL){
@@ -106,7 +114,6 @@ class Snake {
         }
         cur = cur->next;
       }
-
       return false;
     }
 };
@@ -115,10 +122,12 @@ class Apple {
   public:
     int x;
     int y;
+    
     Apple(){
       this->x = rand() % (7 - 1) + 1;
       this->y = rand() % (7 - 3) + 3;
     }
+    
     void reset(){
       this->x = rand() % (7 - 1) + 1;
       this->y = rand() % (7 - 1) + 1;
@@ -137,6 +146,7 @@ class Apple {
 class Board {
   public:
     int matrix[row][col];
+    
     void reset_matrix(){
       for (int i = 0; i < row; i++){
         for (int j = 0; j < col; j++){
@@ -144,15 +154,19 @@ class Board {
         }
       }
     }
-    void update_matrix(Snake *snake, Apple* apple){
+    
+    void update_matrix(Node *snake_head, Apple* apple, bool show_apple){
       this->reset_matrix();
-      this->matrix[apple->y][apple->x] = 1;
-      Node *cur = snake->head;
+      if (show_apple){
+        this->matrix[apple->y][apple->x] = 1;
+      }
+      Node *cur = snake_head;
       while (cur != NULL){
         this->matrix[cur->y][cur->x] = 1;
         cur = cur->next;
       }
     }
+    
     void print_matrix(){ //debugging
       for (int i = 0; i < row; i++){
         for (int j = 0; j < col; j++){
@@ -167,30 +181,26 @@ class Board {
 int get_move(){
   int val_x = analogRead(joyStick_x);
   int val_y = analogRead(joyStick_y);
-  // resting values of specific joytstick
+  // resting values of our joytstick
   int resting_x = 563;
   int resting_y = 518;
   int range = 50;
   int mov = 0;
   if (val_x < resting_x - range){
-    mov = right;
-  } else if (val_x > resting_x + range){
-    mov = left;
-  } else if (val_y < resting_y - range){
     mov = up;
-  } else if (val_y > resting_y + range){
+  } else if (val_x > resting_x + range){
     mov = down;
+  } else if (val_y < resting_y - range){
+    mov = left;
+  } else if (val_y > resting_y + range){
+    mov = right;
   }
   return mov;
 }
 
-void loop() {
-  Snake *snake = new Snake;
-  Board *board = new Board;
-  Apple *apple = new Apple;
-  board->update_matrix(snake, apple);
+void play_game(Snake *snake, Apple *apple, Board *board){
+  board->update_matrix(snake->head, apple, true);
   write_LED(board->matrix);
-  //main
   while (snake->direct == 0){
     int mov = get_move();
     snake->direct = mov;
@@ -202,16 +212,38 @@ void loop() {
       snake->direct = mov;
     }
     snake->insert_head(snake->direct);
+    if (snake->check_collision()) {
+      break;
+    }
     if (apple->check_eaten(snake)) {
     } else {
       snake->delete_tail();
     }
-    if (snake->check_collision()) {
-      break;
-    }
-    board->update_matrix(snake, apple);
+    board->update_matrix(snake->head, apple, true);
     write_LED(board->matrix);
   }
+}
+
+//show final snake once game ends
+void end_game(Snake *snake, Apple *apple, Board *board){
+  Serial.print("Score: ");
+  Serial.println(snake->score);
+  for (int i = 0; i < 3; i++){
+    board->update_matrix(snake->head->next, apple, false);
+    write_LED(board->matrix);
+    delay(250);
+    board->reset_matrix();
+    write_LED(board->matrix);
+    delay(250);
+  }
+}
+
+void loop() {
+  Snake *snake = new Snake;
+  Board *board = new Board;
+  Apple *apple = new Apple;
+  play_game(snake, apple, board);
+  end_game(snake, apple, board);
   //cleanup
   delete snake;
   delete board;
